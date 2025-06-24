@@ -1,0 +1,16 @@
+{
+    "extends": "./tsconfig.json", // Extends the base tsconfig
+    "compilerOptions": {
+      "outDir": "./dist",        // Output directory for compiled files
+      "types": [],               // Exclude spec types if you don't need them
+      "baseUrl": ".",
+      "paths": {
+        "@/*": [
+          "./src/*"
+      ]
+    }
+    },
+    "include": ["src/**/*"],     // Include application code
+    "exclude": ["node_modules", "test", "dist"] // Exclude unnecessary files
+  }
+  
