@@ -9,57 +9,98 @@ const Ollama = () => {
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+  // System prompt to set behavior of the chatbot
+  const systemPrompt = `
+You are a mental health support assistant.
+You provide kind, empathetic, supportive, and non-judgmental responses.
+You help users who are feeling stressed, anxious, sad, or overwhelmed.
+You are not a therapist, so avoid giving medical advice or diagnosis.
+Respond in a calm and understanding tone. Keep answers short and gentle.
+`;
+
+  const buildPrompt = () => {
+    // Optional: include a few past messages for context
+    const recentMessages = messages.slice(-4).map(msg => {
+      return `${msg.sender === 'user' ? 'User' : 'AI'}: ${msg.text}`;
+    }).join('\n');
+
+    return `
+${systemPrompt.trim()}
+
+${recentMessages}
+User: ${input}
+AI:
+`.trim();
+  };
+
   const handleSend = async () => {
     if (!input.trim()) return;
     setIsLoading(true);
-    
-    // Add user message to chat
+
     setMessages((prev) => [...prev, { sender: 'user', text: input }]);
 
-    // Call the Ollama API
+    const fullPrompt = buildPrompt();
+
     try {
       const response = await fetch('http://localhost:11434/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama3.2:latest',
-          prompt: input,
+          model: 'tinyllama',
+          prompt: fullPrompt,
+          stream: true
         }),
       });
 
       const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
       let botResponse = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
-        const chunk = new TextDecoder().decode(value);
-        const parsedChunk = JSON.parse(chunk);
-        botResponse += parsedChunk.response;
 
-        setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (lastMessage.sender === 'bot') {
-            return [...prev.slice(0, -1), { sender: 'bot', text: botResponse }];
-          } else {
-            return [...prev, { sender: 'bot', text: botResponse }];
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            botResponse += parsed.response;
+
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.sender === 'bot') {
+                return [...prev.slice(0, -1), { sender: 'bot', text: botResponse }];
+              } else {
+                return [...prev, { sender: 'bot', text: botResponse }];
+              }
+            });
+          } catch (err) {
+            console.error('Streaming parse error:', err);
           }
-        });
+        }
       }
     } catch (error) {
       console.error('Error:', error);
-      setMessages((prev) => [...prev, { 
-        sender: 'bot', 
-        text: 'Sorry, something went wrong. Please try again later.' 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'bot',
+          text: 'Sorry, something went wrong. Please try again later.',
+        },
+      ]);
     } finally {
       setIsLoading(false);
       setInput('');
@@ -81,14 +122,14 @@ const Ollama = () => {
             Mental Health Support Assistant
           </h1>
         </div>
-        
+
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="text-center text-gray-500 mt-8">
               Start a conversation to get support and guidance.
             </div>
           )}
-          
+
           {messages.map((msg, index) => (
             <div
               key={index}
